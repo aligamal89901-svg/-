@@ -1,0 +1,8 @@
+.dart_tool/
+.packages
+build/
+android/.gradle/
+android/app/build/
+ios/.symlinks/
+*.iml
+*.lock
