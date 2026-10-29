@@ -134,7 +134,6 @@ class _TerminalPairingSheetState extends State<TerminalPairingSheet> {
                 ],
               ),
               const SizedBox(height: 16),
-              // بطاقة الخطوة 1
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -151,7 +150,7 @@ class _TerminalPairingSheetState extends State<TerminalPairingSheet> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'انسخ هذا الأمر والصقه في تطبيق Termux مباشرة (لا يشترط وجود ملفات مسبقة):',
+                      'انسخ هذا الأمر والصقه في Termux مباشرة (يعمل دون أي ملفات سابقة):',
                       style: GoogleFonts.ibmPlexSansArabic(fontSize: 11, color: Colors.black54),
                     ),
                     const SizedBox(height: 10),
@@ -185,7 +184,6 @@ class _TerminalPairingSheetState extends State<TerminalPairingSheet> {
                 ),
               ),
               const SizedBox(height: 12),
-              // بطاقة الخطوة 2
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -202,7 +200,7 @@ class _TerminalPairingSheetState extends State<TerminalPairingSheet> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'أدخل الرمز الظاهر في نافذة Termux (مثال: 190-880):',
+                      'أدخل الرمز الظاهر في الطرفية (مثال: 190-880 أو 190880):',
                       style: GoogleFonts.ibmPlexSansArabic(fontSize: 11, color: Colors.black54),
                     ),
                     const SizedBox(height: 8),
