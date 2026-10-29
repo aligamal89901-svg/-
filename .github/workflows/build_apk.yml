@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java JDK 21
@@ -31,13 +31,18 @@ jobs:
         run: flutter pub get
 
       - name: Build Universal Release APK
-        run:         INSTALLED_NDK=$(ls -1 "$ANDROID_HOME/ndk" 2>/dev/null | sort -V | tail -n 1)
-        if [ -n "$INSTALLED_NDK" ]; then
-          echo "Using pre-installed NDK: $INSTALLED_NDK"
-          sed -i "s/ndkVersion = .*/ndkVersion = \"$INSTALLED_NDK\"/g" android/app/build.gradle.kts 2>/dev/null || true
-          sed -i "s/ndkVersion .*/ndkVersion \"$INSTALLED_NDK\"/g" android/app/build.gradle 2>/dev/null || true
-        fi
-        flutter build apk --release --no-tree-shake-icons
+        run: |
+          INSTALLED_NDK=$(ls -1 "$ANDROID_HOME/ndk" 2>/dev/null | sort -V | tail -n 1)
+          if [ -n "$INSTALLED_NDK" ]; then
+            echo "Using pre-installed NDK: $INSTALLED_NDK"
+            if [ -f "android/app/build.gradle.kts" ]; then
+              sed -i "s/ndkVersion = .*/ndkVersion = \"$INSTALLED_NDK\"/g" android/app/build.gradle.kts || true
+            fi
+            if [ -f "android/app/build.gradle" ]; then
+              sed -i "s/ndkVersion .*/ndkVersion \"$INSTALLED_NDK\"/g" android/app/build.gradle || true
+            fi
+          fi
+          flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
