@@ -39,12 +39,13 @@ class TerminalLinkService extends ChangeNotifier {
 
   Future<Map<String, dynamic>> submitPairingCode(String code, {String apiKey = ''}) async {
     try {
+      final cleanCode = code.replaceAll('-', '').trim();
       final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
       final request = await client.postUrl(Uri.parse('$baseUrl/v1/pair'));
       request.headers.set('Content-Type', 'application/json; charset=utf-8');
       
       final payload = jsonEncode({
-        'code': code.trim(),
+        'code': cleanCode,
         'api_key': apiKey,
       });
       request.add(utf8.encode(payload));
@@ -63,47 +64,64 @@ class TerminalLinkService extends ChangeNotifier {
         return {'success': false, 'message': data['message'] ?? 'رمز التحقق غير صحيح'};
       }
     } catch (e) {
-      return {'success': false, 'message': 'تعذر الاتصال بمحرك Termux، تأكد من تشغيل الأمر'};
+      return {'success': false, 'message': 'تعذر الاتصال بالمحرك، تأكد من تشغيل الأمر في الطرفية'};
     }
   }
 
-  static const String selfContainedInstallCommand = r"""mkdir -p ~/.nasaq && cat << 'INLINE_INIT' > ~/.nasaq/init.sh
-#!/data/data/com.termux/files/usr/bin/bash
-clear
-echo -e "\033[1;36m====================================================\033[0m"
-echo -e "\033[1;32m         منظومة نَسَق | NASAQ TERMINAL ENGINE        \033[0m"
-echo -e "\033[1;36m====================================================\033[0m"
-echo -e "[1/3] فحص الحزم وتحديث الأدوات..."
-pkg update -y -q > /dev/null 2>&1
-pkg install -y python proot-distro curl > /dev/null 2>&1
+  // أمر ذاتي شامل يعمل في أي مكان (Termux عادي أو داخل PRoot) ولا يعتمد على مسار مسبق
+  static const String selfContainedInstallCommand = r"""bash -c "$(cat << 'NASAQ_RUNNER'
+mkdir -p ~/.nasaq
 
-echo -e "[2/3] فحص بيئة PRoot المعزولة..."
-if ! proot-distro list | grep -q "ubuntu.*installed"; then
-    echo ">> جاري إعداد بيئة Ubuntu لأول مرة..."
-    proot-distro install ubuntu
+# 1. تحرير المنفذ 8081 وإنهاء أي خوادم قديمة
+pkill -9 -f "proxy.py" 2>/dev/null || true
+pkill -9 -f "server.py" 2>/dev/null || true
+pkill -9 -f "nasaq" 2>/dev/null || true
+python3 -c "import subprocess; [subprocess.run(['kill', '-9', p]) for p in subprocess.run(['lsof', '-ti:8081'], capture_output=True, text=True).stdout.split()]" 2>/dev/null || true
+
+# 2. فحص وتثبيت بايثون والأدوات تلقائياً حسب نوع البيئة
+if command -v pkg >/dev/null 2>&1; then
+    pkg update -y -q >/dev/null 2>&1
+    pkg install -y python curl >/dev/null 2>&1
+elif command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y -q >/dev/null 2>&1
+    apt-get install -y python3 curl >/dev/null 2>&1
 fi
 
-echo -e "[3/3] تشغيل خادم الربط المحلي الذكي..."
-cat << 'INLINE_PY' > ~/.nasaq/server.py
+# 3. فحص أمان بيئة PRoot (تجنب التكرار إذا كان يعمل بالفعل داخل proot)
+if command -v proot-distro >/dev/null 2>&1; then
+    if [ -z "$PROOT_TMP_DIR" ] && [ "$(id -u)" != "0" ] && ! grep -qa "proot" /proc/1/cmdline 2>/dev/null; then
+        if ! proot-distro list 2>/dev/null | grep -q "ubuntu.*installed"; then
+            echo ">> جاري تجهيز نواة Ubuntu في الخلفية..."
+            proot-distro install ubuntu >/dev/null 2>&1
+        fi
+    fi
+fi
+
+# 4. كتابة خادم نَسَق الذكي الموحد
+cat << 'PYEOF' > ~/.nasaq/server.py
 import http.server, socketserver, json, random, os, string, ssl, urllib.request, subprocess
 
 PORT = 8081
 PAIR_FILE = os.path.expanduser("~/.nasaq/pair.json")
-CODE = f"{random.randint(100, 999)}-{random.randint(100, 999)}"
-TOKEN = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
 
-if not os.path.exists(PAIR_FILE):
-    with open(PAIR_FILE, "w") as f:
-        json.dump({"code": CODE, "paired": False, "token": TOKEN, "api_key": ""}, f)
-else:
+# توليد رمز سداسي جديد
+RAW_PIN = f"{random.randint(100000, 999999)}"
+DISPLAY_PIN = f"{RAW_PIN[:3]}-{RAW_PIN[3:]}"
+TOKEN = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+
+cur_data = {"raw_pin": RAW_PIN, "code": DISPLAY_PIN, "paired": False, "token": TOKEN, "api_key": ""}
+if os.path.exists(PAIR_FILE):
     try:
-        cur = json.load(open(PAIR_FILE))
-        if not cur.get("paired"):
-            cur["code"] = CODE
-            json.dump(cur, open(PAIR_FILE, "w"))
+        old = json.load(open(PAIR_FILE))
+        if old.get("paired"):
+            cur_data["paired"] = True
+            cur_data["api_key"] = old.get("api_key", "")
+            cur_data["token"] = old.get("token", TOKEN)
     except:
-        with open(PAIR_FILE, "w") as f:
-            json.dump({"code": CODE, "paired": False, "token": TOKEN, "api_key": ""}, f)
+        pass
+
+with open(PAIR_FILE, "w") as f:
+    json.dump(cur_data, f)
 
 class NASAQHandler(http.server.BaseHTTPRequestHandler):
     def _cors(self, code=200):
@@ -126,7 +144,7 @@ class NASAQHandler(http.server.BaseHTTPRequestHandler):
                 self._cors(500)
         elif self.path == '/v1/models':
             self._cors(200)
-            self.wfile.write(json.dumps({"data": [{"id": "gemini-2.5-flash"}, {"id": "gemini-1.5-flash"}]}).encode())
+            self.wfile.write(json.dumps({"data": [{"id": "gemini-2.5-flash"}]}).encode())
         else:
             self._cors(404)
 
@@ -135,18 +153,25 @@ class NASAQHandler(http.server.BaseHTTPRequestHandler):
         raw_body = self.rfile.read(length)
         
         if self.path == '/v1/pair':
-            body = json.loads(raw_body.decode('utf-8'))
-            data = json.load(open(PAIR_FILE))
-            if body.get('code') == data['code']:
-                data['paired'] = True
-                if body.get('api_key'):
-                    data['api_key'] = body['api_key']
-                json.dump(data, open(PAIR_FILE, 'w'))
-                self._cors(200)
-                self.wfile.write(json.dumps({"status": "success", "token": data['token']}).encode())
-            else:
-                self._cors(401)
-                self.wfile.write(json.dumps({"status": "error", "message": "رمز التحقق غير صحيح"}).encode())
+            try:
+                body = json.loads(raw_body.decode('utf-8'))
+                input_pin = str(body.get('code', '')).replace('-', '').strip()
+                data = json.load(open(PAIR_FILE))
+                
+                if input_pin == data.get('raw_pin') or input_pin == data.get('code', '').replace('-', ''):
+                    data['paired'] = True
+                    if body.get('api_key'):
+                        data['api_key'] = body['api_key']
+                    with open(PAIR_FILE, 'w') as f:
+                        json.dump(data, f)
+                    self._cors(200)
+                    self.wfile.write(json.dumps({"status": "success", "token": data['token']}).encode())
+                else:
+                    self._cors(401)
+                    self.wfile.write(json.dumps({"status": "error", "message": "رمز التحقق غير مطابق"}).encode())
+            except Exception as e:
+                self._cors(500)
+                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode())
                 
         elif self.path == '/v1/chat/completions':
             try:
@@ -154,7 +179,6 @@ class NASAQHandler(http.server.BaseHTTPRequestHandler):
                 key = data.get('api_key', '')
                 req_data = json.loads(raw_body.decode('utf-8'))
                 
-                # بناء حمولة Gemini من صيغة OpenAI
                 contents = []
                 for m in req_data.get('messages', []):
                     role = 'user' if m.get('role') in ['user', 'system'] else 'model'
@@ -163,7 +187,7 @@ class NASAQHandler(http.server.BaseHTTPRequestHandler):
                 g_payload = {'contents': contents}
                 data_bytes = json.dumps(g_payload).encode('utf-8')
                 
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
                 req = urllib.request.Request(url, data=data_bytes, method='POST')
                 req.add_header('Content-Type', 'application/json; charset=utf-8')
                 req.add_header('x-goog-api-key', key)
@@ -196,33 +220,27 @@ class NASAQHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._cors(500)
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
-                
-        elif self.path == '/v1/exec':
-            body = json.loads(raw_body.decode('utf-8'))
-            cmd = body.get('command', 'ls')
-            res = subprocess.run(["proot-distro", "login", "ubuntu", "--", "bash", "-c", cmd], capture_output=True, text=True)
-            self._cors(200)
-            self.wfile.write(json.dumps({"stdout": res.stdout, "stderr": res.stderr, "exit_code": res.returncode}).encode())
 
 socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(("127.0.0.1", PORT), NASAQHandler) as httpd:
     httpd.serve_forever()
-INLINE_PY
+PYEOF
 
-pkill -f "python.*server.py" 2>/dev/null || true
 nohup python3 ~/.nasaq/server.py > ~/.nasaq/server.log 2>&1 &
-sleep 2
+sleep 1.5
 
 PIN=$(python3 -c "import json, os; print(json.load(open(os.path.expanduser('~/.nasaq/pair.json')))['code'])")
 
-echo -e "\033[1;32m====================================================\033[0m"
-echo -e "\033[1;37m        ✓ تم تشغيل محرك نَسَق بنجاح في الخلفية       \033[0m"
-echo -e "\033[1;32m====================================================\033[0m"
-echo ""
-echo -e "   رمز الاقتران الخاص بجهازك:  \033[1;33m[ $PIN ]\033[0m"
-echo ""
-echo -e ">> ارجع الآن لتطبيق «نَسَق» واكتب هذا الرمز في الشاشة."
+clear
 echo -e "\033[1;36m====================================================\033[0m"
-INLINE_INIT
-bash ~/.nasaq/init.sh""";
+echo -e "\033[1;32m         منظومة نَسَق | NASAQ CORE ENGINE           \033[0m"
+echo -e "\033[1;36m====================================================\033[0m"
+echo ""
+echo -e "   ✓ المحرك يعمل بنشاط في خلفية جهازك"
+echo -e "   رمز الاقتران المباشر:  \033[1;33m[  $PIN  ]\033[0m"
+echo ""
+echo -e ">> اكتب الرمز في تطبيق «نَسَق» لإتمام الربط فوراً."
+echo -e "\033[1;36m====================================================\033[0m"
+NASAQ_RUNNER
+)""";
 }
