@@ -63,7 +63,7 @@ class TerminalLinkService extends ChangeNotifier {
         return {'success': false, 'message': data['message'] ?? 'رمز التحقق غير صحيح'};
       }
     } catch (e) {
-      return {'success': false, 'message': 'تعذر الاتصال بمحرك Termux، تأكد من تشغيله'};
+      return {'success': false, 'message': 'تعذر الاتصال بمحرك Termux، تأكد من تشغيل الأمر'};
     }
   }
 
@@ -83,17 +83,27 @@ if ! proot-distro list | grep -q "ubuntu.*installed"; then
     proot-distro install ubuntu
 fi
 
-echo -e "[3/3] تشغيل خادم الربط المحلي..."
+echo -e "[3/3] تشغيل خادم الربط المحلي الذكي..."
 cat << 'INLINE_PY' > ~/.nasaq/server.py
-import http.server, socketserver, json, random, os, string
+import http.server, socketserver, json, random, os, string, ssl, urllib.request, subprocess
 
 PORT = 8081
 PAIR_FILE = os.path.expanduser("~/.nasaq/pair.json")
 CODE = f"{random.randint(100, 999)}-{random.randint(100, 999)}"
 TOKEN = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
 
-with open(PAIR_FILE, "w") as f:
-    json.dump({"code": CODE, "paired": False, "token": TOKEN, "api_key": ""}, f)
+if not os.path.exists(PAIR_FILE):
+    with open(PAIR_FILE, "w") as f:
+        json.dump({"code": CODE, "paired": False, "token": TOKEN, "api_key": ""}, f)
+else:
+    try:
+        cur = json.load(open(PAIR_FILE))
+        if not cur.get("paired"):
+            cur["code"] = CODE
+            json.dump(cur, open(PAIR_FILE, "w"))
+    except:
+        with open(PAIR_FILE, "w") as f:
+            json.dump({"code": CODE, "paired": False, "token": TOKEN, "api_key": ""}, f)
 
 class NASAQHandler(http.server.BaseHTTPRequestHandler):
     def _cors(self, code=200):
@@ -114,13 +124,18 @@ class NASAQHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"online": True, "paired": data.get("paired", False)}).encode())
             except:
                 self._cors(500)
+        elif self.path == '/v1/models':
+            self._cors(200)
+            self.wfile.write(json.dumps({"data": [{"id": "gemini-2.5-flash"}, {"id": "gemini-1.5-flash"}]}).encode())
         else:
             self._cors(404)
 
     def do_POST(self):
         length = int(self.headers.get('content-length', 0))
-        body = json.loads(self.rfile.read(length).decode('utf-8'))
+        raw_body = self.rfile.read(length)
+        
         if self.path == '/v1/pair':
+            body = json.loads(raw_body.decode('utf-8'))
             data = json.load(open(PAIR_FILE))
             if body.get('code') == data['code']:
                 data['paired'] = True
@@ -132,14 +147,62 @@ class NASAQHandler(http.server.BaseHTTPRequestHandler):
             else:
                 self._cors(401)
                 self.wfile.write(json.dumps({"status": "error", "message": "رمز التحقق غير صحيح"}).encode())
+                
         elif self.path == '/v1/chat/completions':
-            self.send_response(200)
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
-            self.end_headers()
-            msg = {"choices": [{"delta": {"content": "تم ربط نَسَق بمحرك جهازك بنجاح! الوكيل جاهز الآن للعمل معك."}}]}
-            self.wfile.write(f"data: {json.dumps(msg, ensure_ascii=False)}\n\n".encode())
-            self.wfile.write(b"data: [DONE]\n\n")
+            try:
+                data = json.load(open(PAIR_FILE))
+                key = data.get('api_key', '')
+                req_data = json.loads(raw_body.decode('utf-8'))
+                
+                # بناء حمولة Gemini من صيغة OpenAI
+                contents = []
+                for m in req_data.get('messages', []):
+                    role = 'user' if m.get('role') in ['user', 'system'] else 'model'
+                    contents.append({'role': role, 'parts': [{'text': m.get('content', '')}]})
+                
+                g_payload = {'contents': contents}
+                data_bytes = json.dumps(g_payload).encode('utf-8')
+                
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+                req = urllib.request.Request(url, data=data_bytes, method='POST')
+                req.add_header('Content-Type', 'application/json; charset=utf-8')
+                req.add_header('x-goog-api-key', key)
+                
+                ctx = ssl.create_default_context()
+                resp = urllib.request.urlopen(req, context=ctx, timeout=30)
+                
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+                self.end_headers()
+                
+                for raw_line in resp:
+                    line = raw_line.decode('utf-8', errors='ignore')
+                    if line.startswith('data: '):
+                        chunk_str = line[6:].strip()
+                        if chunk_str and chunk_str != '[DONE]':
+                            try:
+                                g_chunk = json.loads(chunk_str)
+                                parts = g_chunk.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+                                piece = "".join([p.get('text', '') for p in parts])
+                                if piece:
+                                    out_sse = {"choices": [{"delta": {"content": piece}}]}
+                                    self.wfile.write(f"data: {json.dumps(out_sse, ensure_ascii=False)}\n\n".encode('utf-8'))
+                                    self.wfile.flush()
+                            except:
+                                pass
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except Exception as e:
+                self._cors(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                
+        elif self.path == '/v1/exec':
+            body = json.loads(raw_body.decode('utf-8'))
+            cmd = body.get('command', 'ls')
+            res = subprocess.run(["proot-distro", "login", "ubuntu", "--", "bash", "-c", cmd], capture_output=True, text=True)
+            self._cors(200)
+            self.wfile.write(json.dumps({"stdout": res.stdout, "stderr": res.stderr, "exit_code": res.returncode}).encode())
 
 socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(("127.0.0.1", PORT), NASAQHandler) as httpd:

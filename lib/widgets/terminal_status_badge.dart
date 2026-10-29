@@ -22,37 +22,37 @@ class _TerminalStatusBadgeState extends State<TerminalStatusBadge> {
       animation: TerminalLinkService.instance,
       builder: (context, _) {
         final isConnected = TerminalLinkService.instance.isOnline;
-        return InkWell(
+        return GestureDetector(
           onTap: () => TerminalPairingSheet.show(context),
-          borderRadius: BorderRadius.circular(20),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            margin: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
             decoration: BoxDecoration(
-              color: isConnected ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
-              borderRadius: BorderRadius.circular(20),
+              color: isConnected ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isConnected ? const Color(0xFF81C784) : const Color(0xFFE57373),
-                width: 1,
+                color: isConnected ? const Color(0xFFA5D6A7) : const Color(0xFFFFCC80),
+                width: 0.8,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 8,
-                  height: 8,
+                  width: 6,
+                  height: 6,
                   decoration: BoxDecoration(
-                    color: isConnected ? const Color(0xFF2E7D32) : const Color(0xFFC62828),
+                    color: isConnected ? const Color(0xFF2E7D32) : const Color(0xFFE65100),
                     shape: BoxShape.circle,
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 Text(
-                  isConnected ? 'المحرك نشط' : 'ربط Termux',
+                  isConnected ? 'المحرك نشط' : 'ربط Termux ⚡',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 9.5,
                     fontWeight: FontWeight.bold,
-                    color: isConnected ? const Color(0xFF1B5E20) : const Color(0xFFB71C1C),
+                    color: isConnected ? const Color(0xFF1B5E20) : const Color(0xFFBF360C),
                   ),
                 ),
               ],

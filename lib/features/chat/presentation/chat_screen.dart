@@ -242,15 +242,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               color: NasaqColors.inkPrimary,
                             ),
                           ),
-                          Text(
-                            'Ubuntu PRoot • /root/nasaq/workspace',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.jetBrainsMono(
-                              fontSize: 10,
-                              color: NasaqColors.inkMuted,
-                            ),
-                          ),
+                          const TerminalStatusBadge(),
                         ],
                       ),
                     ),
