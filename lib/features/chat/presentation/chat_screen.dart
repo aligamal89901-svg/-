@@ -167,7 +167,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return widget.starterPrompts ??
         const [
           'افحص محتويات مجلد مساحة العمل المشتركة',
-                    const TerminalStatusBadge(),
+          'أنشئ سكربت أتمتة واحفظه في Ubuntu PRoot',
         ];
   }
 
@@ -243,7 +243,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ),
                           ),
                           Text(
-                    const TerminalStatusBadge(),
+                            'Ubuntu PRoot • /root/nasaq/workspace',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.jetBrainsMono(
@@ -407,7 +407,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                    const TerminalStatusBadge(),
+                                'متصل ببيئة Ubuntu PRoot (/root/nasaq/workspace).\nاطلب تنفيذ أوامر أو إنشاء وتعديل ملفات حقيقية.',
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.ibmPlexSansArabic(
                                   fontSize: 12,
