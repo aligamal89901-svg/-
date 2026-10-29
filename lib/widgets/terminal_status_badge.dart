@@ -21,7 +21,7 @@ class _TerminalStatusBadgeState extends State<TerminalStatusBadge> {
     return AnimatedBuilder(
       animation: TerminalLinkService.instance,
       builder: (context, _) {
-        final isConnected = TerminalLinkService.instance.isOnline;
+        final isConnected = TerminalLinkService.instance.isOnline && TerminalLinkService.instance.isPaired;
         return GestureDetector(
           onTap: () => TerminalPairingSheet.show(context),
           child: Container(

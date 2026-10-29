@@ -25,7 +25,7 @@ class TerminalLinkService extends ChangeNotifier {
         final body = await response.transform(utf8.decoder).join();
         final data = jsonDecode(body);
         _isOnline = true;
-        _isPaired = data['paired'] == true;
+        _isPaired = (data['paired'] == true && _activeToken.isNotEmpty);
         notifyListeners();
         return true;
       }
